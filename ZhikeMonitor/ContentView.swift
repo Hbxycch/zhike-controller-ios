@@ -157,30 +157,29 @@ struct DashboardView: View {
             MetricCard(title: "电机转速",
                        value: value { frame in frame.rpm.map { String(format: "%.0f", $0) } },
                        unit: "rpm")
+            MetricCard(title: "相电流(估)",
+                       value: value { frame in frame.phaseCurrentEstimate.map { String(format: "%.1f", $0) } },
+                       unit: "A")
             MetricCard(title: "控制器温度",
                        value: value { frame in frame.controllerTemp.map { String(format: "%.1f", $0) } },
                        unit: "℃")
+            MetricCard(title: "转把电压",
+                       value: value { frame in String(format: "%.2f", frame.throttleVoltage) },
+                       unit: "V")
+            MetricCard(title: "12V 电源",
+                       value: value { frame in frame.twelveVoltRail.map { String(format: "%.2f", $0) } },
+                       unit: "V")
             MetricCard(title: "PWM 占空比 w11",
                        value: value { frame in frame.dutyCycle.map { String(format: "%.0f", $0) } },
                        unit: "%")
-            MetricCard(title: "相电流采样 w14",
-                       value: value { frame in String(frame.phaseSampleU) },
-                       unit: "raw")
-            MetricCard(title: "相电流采样 w15",
-                       value: value { frame in String(frame.phaseSampleV) },
-                       unit: "raw")
-            MetricCard(title: "负载量 w7 / w10",
-                       value: value { frame in "\(frame.loadAux1) / \(frame.loadAux2)" },
-                       unit: "raw")
-            MetricCard(title: "辅助温度 w16 / w17",
-                       value: value { frame in
-                           let a = frame.auxTemp1.map { String(format: "%.1f", $0) } ?? "--"
-                           let b = frame.auxTemp2.map { String(format: "%.1f", $0) } ?? "--"
-                           return "\(a) / \(b)"
-                       },
+            MetricCard(title: "环境温度 w17",
+                       value: value { frame in frame.auxTemp2.map { String(format: "%.1f", $0) } },
                        unit: "℃")
-            MetricCard(title: "转把 w2",
-                       value: value { frame in String(frame.throttleRaw) },
+            MetricCard(title: "相电流采样 w14/w15",
+                       value: value { frame in "\(frame.phaseSampleU) / \(frame.phaseSampleV)" },
+                       unit: "raw")
+            MetricCard(title: "负载量 w10 (iq?)",
+                       value: value { frame in String(frame.loadAux2) },
                        unit: "raw")
             MetricCard(title: "状态 w20/w21",
                        value: value { frame in String(format: "%02X/%04X", frame.words[20], frame.words[21]) },
