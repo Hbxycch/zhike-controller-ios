@@ -1,0 +1,81 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (macOS)
+    runs-on: macos-14
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project ZhikeMonitor.xcodeproj
+
+      - name: Build for simulator (compile check)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ZhikeMonitor.xcodeproj \
+            -scheme ZhikeMonitor \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build unsigned device app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project ZhikeMonitor.xcodeproj \
+            -scheme ZhikeMonitor \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/ZhikeMonitor.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "::error::未找到 $APP_PATH"
+            find build/Build/Products -maxdepth 2 -name "*.app" || true
+            exit 1
+          fi
+          rm -rf Payload ZhikeMonitor-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry ZhikeMonitor-unsigned.ipa Payload
+          ls -lh ZhikeMonitor-unsigned.ipa
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist" || true
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZhikeMonitor-unsigned-ipa
+          path: ZhikeMonitor-unsigned.ipa
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: |
+            build/Logs/Build/*.xcactivitylog
+          retention-days: 3
+          if-no-files-found: ignore

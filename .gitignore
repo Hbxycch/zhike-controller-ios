@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# Python
+__pycache__/
+*.pyc
+
+# WorkBuddy 本地数据
+.workbuddy/
+
+# 日志产物
+*.ipa
+Payload/
