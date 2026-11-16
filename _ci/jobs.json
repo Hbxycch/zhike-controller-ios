@@ -1,0 +1,34 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 133264710945,
+      "run_id": 43857292401,
+      "workflow_name": "iOS Build",
+      "head_branch": "master",
+      "run_url": "https://api.github.com/repos/Hbxycch/zhike-controller-ios/actions/runs/43857292401",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOVwSijM8AAAAfBzIdIQ",
+      "head_sha": "d7115226427fd365d45f96740f41bc54478554d5",
+      "url": "https://api.github.com/repos/Hbxycch/zhike-controller-ios/actions/jobs/133264710945",
+      "html_url": "https://github.com/Hbxycch/zhike-controller-ios/actions/runs/43857292401/job/133264710945",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "created_at": "2026-11-16T11:23:16Z",
+      "started_at": "2026-11-16T11:23:16Z",
+      "completed_at": "2026-11-16T11:23:16Z",
+      "name": "Build (macOS)",
+      "steps": [
+
+      ],
+      "check_run_url": "https://api.github.com/repos/Hbxycch/zhike-controller-ios/check-runs/133264710945",
+      "labels": [
+        "macos-14"
+      ],
+      "runner_id": 0,
+      "runner_name": "",
+      "runner_group_id": 0,
+      "runner_group_name": ""
+    }
+  ]
+}
