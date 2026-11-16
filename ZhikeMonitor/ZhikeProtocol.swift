@@ -22,19 +22,34 @@ extension Array where Element == UInt8 {
 
 // MARK: - 智科实时帧
 //
-// 依据 Motexa 2.7.0（com.motexaqixing.app）反编译基线：
+// 帧结构（2026-11-16 实车 737 帧验证，校验 100% 通过）：
 //   [0..2]   帧头 AA 13 00
-//   [3..64]  31 个小端 16 位数据字（word n 位于 3 + 2n），加上 [65..66] 校验字共 32 个字
-//   [65..66] 校验字：sum(word0..word31) & 0xFFFF == 0xFFFF
+//   [3..64]  31 个小端 16 位数据字（word n 位于 3 + 2n）
+//   [65..66] 校验字 w31 = ~(w0+...+w30) & 0xFFFF，等价于 sum(w0..w31) & 0xFFFF == 0xFFFF
 //
-// 字段（置信度见基线文档，未实车验证）：
-//   w2  转把（原始值）
-//   w6  转速：int16 / 5.46 → rpm
-//   w8  母线电压：raw × 150 / 4096 → 0.1V
-//   w9  母线电流：int16 → A
-//   w18 控制器温度：raw / 100 → ℃（> 200℃ 视为无效）
-//   w21 高字节=驾驶模式(1 有效)，bit4-5=挡位(1=高,2=低,其余=中)
-//   w22 故障位图
+// 实车验证过的字段：
+//   w0  恒 0x4163（消息类型/长度）
+//   w2  转把 ADC：静止约 2100~2120，满把约 4800+
+//   w6  转速：int16 / 5.46 → rpm（实测峰值 1398 → 256 rpm ≈ 23km/h，符合国标限速；
+//       lag-1 自相关 0.974，起步平滑爬升，静止为 0，倒推为小幅负值）
+//   w8  母线电压：raw × 150 / 4096 → 0.1V（实测 81.1~82.4V，72V 满电合理）
+//   w9  母线电流：int16 → A（实测 0~43A，滑行/回充为负，与电压相关系数 -0.92）
+//   w18 控制器温度：raw / 100 → ℃（实测随负载 19.45 → 19.99℃ 缓慢上升）
+//   w31 校验字
+//
+// 实车候选字段（语义基本确认，标定系数待受控实验）：
+//   w11 PWM 占空比：0~4096（起步低转速大转矩时接近满量程，符合占空比行为）
+//   w14 / w15 相电流瞬时采样（int16，两路几乎同步，包络与母线电流正相关；
+//       属异步采样，单帧数值在 ±峰值内跳动，不能按线性标定）
+//   w7  与负载强相关的平滑量（疑似相电流有效值或转矩电流，系数未定）
+//   w10 与母线电流相关 0.82 的平滑量（疑似 iq / 相电流滤波值，系数未定）
+//   w13 小幅噪声 ±350（疑似 id / 偏置）
+//   w16 / 100 ≈ 31℃（恒定，疑似 MOS 或第二温度点）
+//   w17 / 100 ≈ 21℃（恒定，疑似环境温度）
+//   w20 / w21 状态位图（骑行时 w20=3；w21 取值 2/10/58/258/266）
+//   w1 ≈ w3 ≈ w15 × 1.16（疑似与 w15 同源的采样/换算）
+//   w4 静止时恒 0xAAAA，骑行时全幅跳动（疑似载波/PWM 计数器异步采样）
+//   w23 429~509 慢变，瞬间跳变（非温度，语义未知）
 
 struct ZhikeFrame: Identifiable {
     static let header: [UInt8] = [0xAA, 0x13, 0x00]
@@ -118,11 +133,49 @@ struct ZhikeFrame: Identifiable {
         (0..<16).filter { (Int(faultCode) >> $0) & 1 == 1 }
     }
 
+    // MARK: 实车验证新增字段
+
+    /// PWM 占空比 w11（0~4096 → %）
+    var dutyCycle: Double? {
+        let raw = words[11]
+        guard raw > 0, raw <= 4300 else { return nil }
+        return Double(raw) / 4096.0 * 100.0
+    }
+
+    /// 相电流瞬时采样 U（int16 原始值，异步采样）
+    var phaseSampleU: Int16 { Int16(bitPattern: words[14]) }
+
+    /// 相电流瞬时采样 V（int16 原始值，与 U 几乎同步）
+    var phaseSampleV: Int16 { Int16(bitPattern: words[15]) }
+
+    /// 与负载强相关的平滑量 w7（疑似相电流有效值，系数未定）
+    var loadAux1: Int16 { Int16(bitPattern: words[7]) }
+
+    /// 与母线电流相关 0.82 的平滑量 w10（疑似 iq，系数未定）
+    var loadAux2: Int16 { Int16(bitPattern: words[10]) }
+
+    /// w16/100 ≈ 31℃ 恒定（疑似 MOS 温度）
+    var auxTemp1: Double? {
+        let raw = words[16]
+        guard raw > 0, raw <= 20000 else { return nil }
+        return Double(raw) / 100.0
+    }
+
+    /// w17/100 ≈ 21℃ 恒定（疑似环境温度）
+    var auxTemp2: Double? {
+        let raw = words[17]
+        guard raw > 0, raw <= 20000 else { return nil }
+        return Double(raw) / 100.0
+    }
+
+    /// 状态位图 w20 / w21
+    var statusWord: UInt32 { (UInt32(words[21]) << 16) | UInt32(words[20]) }
+
     // MARK: 日志
 
     static let csvHeader: String = {
         let words = (0..<ZhikeFrame.wordCount).map { "w\($0)" }.joined(separator: ",")
-        return "iso_time,seq,checksum_ok,hex,\(words),voltage_v,current_a,power_w,rpm,temp_c,gear,fault,throttle_raw\n"
+        return "iso_time,seq,checksum_ok,hex,\(words),voltage_v,current_a,power_w,rpm,temp_c,gear,fault,throttle_raw,duty_pct,phase_u_raw,phase_v_raw,load_aux_w7,load_aux_w10,aux_temp1_w16,aux_temp2_w17\n"
     }()
 
     func csvRow(seq: Int) -> String {
@@ -140,6 +193,13 @@ struct ZhikeFrame: Identifiable {
         fields.append(gear.map { String($0) } ?? "")
         fields.append(String(format: "0x%04X", Int(faultCode)))
         fields.append(String(throttleRaw))
+        fields.append(dutyCycle.map { String(format: "%.1f", $0) } ?? "")
+        fields.append(String(phaseSampleU))
+        fields.append(String(phaseSampleV))
+        fields.append(String(loadAux1))
+        fields.append(String(loadAux2))
+        fields.append(auxTemp1.map { String(format: "%.2f", $0) } ?? "")
+        fields.append(auxTemp2.map { String(format: "%.2f", $0) } ?? "")
         return fields.joined(separator: ",") + "\n"
     }
 }
@@ -237,14 +297,21 @@ enum ZhikeDemo {
                       throttle: UInt16,
                       fault: UInt16) -> [UInt8] {
         var words = [UInt16](repeating: 0, count: ZhikeFrame.wordCount)
-        words[0] = 0x0002
+        words[0] = 0x4163
         words[2] = throttle
-        words[6] = UInt16(max(0, min(32000, Int((rpm * 5.46).rounded()))))
+        words[6] = UInt16(bitPattern: Int16(max(0, min(1400, Int((rpm * 5.46).rounded())))))
         words[8] = UInt16(max(0, min(65535, Int((voltage * 10.0 * 4096.0 / 150.0).rounded()))))
         words[9] = UInt16(bitPattern: Int16(clamping: Int(current.rounded())))
+        words[11] = UInt16(max(0, min(4096, Int(abs(current) / 50.0 * 4096.0))))
+        words[14] = UInt16(bitPattern: Int16(clamping: Int(current * 138.0 * Double.random(in: 0.2...1.0))))
+        words[15] = words[14]
+        words[7] = UInt16(bitPattern: Int16(clamping: Int(abs(current) * 120.0)))
+        words[10] = UInt16(bitPattern: Int16(clamping: Int(abs(current) * 96.0)))
+        words[16] = 3104
+        words[17] = 2101
         words[18] = UInt16(max(0, min(20000, Int((temperature * 100).rounded()))))
-        let gearBits = gear == 3 ? 1 : (gear == 1 ? 2 : 0)
-        words[21] = UInt16(0x0100 | (gearBits << 4))
+        words[20] = current != 0 ? 3 : 0
+        words[21] = 58
         words[22] = fault
 
         var sum = 0
