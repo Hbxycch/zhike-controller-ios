@@ -28,14 +28,20 @@
 2. 真机 Release 编译（不签名）
 3. 打包成 `ZhikeMonitor-unsigned.ipa` 并作为 Artifact 上传（保留 7 天）
 
+**已跑通**：仓库 <https://github.com/Hbxycch/zhike-controller-ios>，首次构建成功，产物约 190 KB（arm64，iOS 16.0+）。
+
 用法：
 
-1. 把本仓库推到 GitHub（public 仓库的 macOS runner 免费）
-2. 打开仓库 **Actions → iOS Build**，等 3~6 分钟
-3. 页面底部 **Artifacts → ZhikeMonitor-unsigned-ipa** 下载
-4. 用 [Sideloadly](https://sideloadly.io) 或 AltStore，以你自己的 Apple ID 对这个 ipa 重签名后装到 iPhone
+1. 推送代码后打开仓库 **Actions → iOS Build**，等 3~6 分钟
+2. 页面底部 **Artifacts → ZhikeMonitor-unsigned-ipa** 下载
+3. 用 [Sideloadly](https://sideloadly.io) 或 AltStore，以你自己的 Apple ID 对这个 ipa 重签名后装到 iPhone
 
 > 未签名 ipa 不能直接安装，必须本机重签名 —— 这是苹果的限制，不是工程问题。
+
+### CI 踩过的坑（保留备查）
+
+**`runs-on: macos-14` 会瞬间 cancelled**，且不分配 runner、连日志都没有。原因是该镜像已从 GitHub 托管 runner 下线（2026 年）。用 `macos-15` 或 `macos-latest` 即可。
+判断方法：Linux 任务能正常跑、macOS 任务 1 秒内 cancelled 且 `runner_name` 为空 → 就是镜像标签问题，不是账户权限或额度问题。
 
 ## 使用流程
 
@@ -116,8 +122,19 @@ ZhikeMonitor/
 ├── LogStore.swift          日志落盘（events.log + frames.csv）
 └── Info.plist              蓝牙权限、文件共享
 project.yml                 XcodeGen 备用工程描述（没装 XcodeGen 可忽略）
+.github/workflows/ios-build.yml   CI：编译校验 + 产出未签名 ipa
+dist/ZhikeMonitor-unsigned.ipa    本次 CI 产出的可安装包（未签名）
 ```
 
-## 备选：没有 Mac 的情况
+## 没有 Mac 也能把它装到 iPhone 上
 
-iOS App 必须有 Mac + Xcode 才能编译安装（iOS 的 Safari 也不支持 Web Bluetooth）。如果没有 Mac，可行的替代是做一个 **Android / 桌面 Chrome 的 Web Bluetooth 网页版**，同一套协议解析可以直接复用，说一声我就写。
+`macos-15` runner 编译出的 `ZhikeMonitor-unsigned.ipa` **可以在 Windows 上装**：
+
+1. Windows 装 [Sideloadly](https://sideloadly.io) + iTunes（提供 Apple 驱动）
+2. iPhone 连线，Sideloadly 里拖入 `dist/ZhikeMonitor-unsigned.ipa`
+3. 填自己的 Apple ID → Start，自动用免费开发者证书重签名并安装
+4. 首次运行前到 iPhone 的 设置 → 通用 → VPN与设备管理 里信任该证书
+
+免费 Apple ID 签的 App 有效期 7 天，到期重签一次即可（数据不会丢，日志在文件 App 里）。
+
+如果完全不想要签名这一套，替代方案是 **Android / 桌面 Chrome 的 Web Bluetooth 网页版**，同一套协议解析可以直接复用。
