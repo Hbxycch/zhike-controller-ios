@@ -188,7 +188,7 @@ struct LogsView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(logs.lastWriteAt == nil ? Color.gray : Color.green)
+                    .fill(recordDotColor)
                     .frame(width: 7, height: 7)
                 Text("\(logs.sessionStamp)  ·  \(logs.totalFrames) 帧  ·  \(formatBytes(logs.bytesWritten))")
                     .font(.caption2.monospacedDigit())
@@ -202,6 +202,16 @@ struct LogsView: View {
                         .foregroundStyle(.blue)
                         .clipShape(Capsule())
                 }
+                Toggle(isOn: Binding(
+                    get: { logs.loggingEnabled },
+                    set: { logs.setLoggingEnabled($0) }
+                )) {
+                    Text("记录")
+                        .font(.system(size: 10))
+                }
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .fixedSize()
             }
             Text(lastWriteText)
                 .font(.system(size: 9, design: .monospaced))
@@ -213,7 +223,13 @@ struct LogsView: View {
         .background(Color(.secondarySystemGroupedBackground))
     }
 
+    private var recordDotColor: Color {
+        if !logs.loggingEnabled { return .gray }
+        return logs.lastWriteAt == nil ? Color.orange : Color.green
+    }
+
     private var lastWriteText: String {
+        if !logs.loggingEnabled { return "记录已暂停：屏幕仍显示，写盘停止" }
         guard let last = logs.lastWriteAt else { return "等待数据…（每 5 秒落盘一次）" }
         let seconds = Int(Date().timeIntervalSince(last))
         return "最后写入 \(seconds) 秒前 · \(logs.folderPath)"
@@ -398,6 +414,8 @@ struct SettingsView: View {
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
     @AppStorage("gearRatio") private var gearRatio: Double = 5.8
     @AppStorage("speedFactorOverride") private var speedFactor: Double = 0.0155
+    @AppStorage(Appearance.storageKey) private var appearanceRaw = Appearance.system.rawValue
+    @StateObject private var updater = UpdateChecker.shared
     @State private var gpsSpeed: Double = 0
     @State private var referenceW6: Double = 0
 
@@ -409,6 +427,15 @@ struct SettingsView: View {
                     Toggle("只显示 GEKOO / 智科设备", isOn: $client.filterZhikeOnly)
                     Button("重新扫描") { client.startScan() }
                     Button("断开连接", role: .destructive) { client.disconnect() }
+                }
+
+                Section("外观") {
+                    Picker("主题", selection: $appearanceRaw) {
+                        ForEach(Appearance.allCases) { mode in
+                            Text(mode.label).tag(mode.rawValue)
+                        }
+                    }
+                    .pickerStyle(.segmented)
                 }
 
                 Section("车速换算") {
@@ -509,6 +536,12 @@ struct SettingsView: View {
                 }
 
                 Section("日志") {
+                    Toggle(isOn: Binding(
+                        get: { logs.loggingEnabled },
+                        set: { logs.setLoggingEnabled($0) }
+                    )) {
+                        Text("写盘记录")
+                    }
                     LabeledContent("今日会话", value: logs.sessionStamp)
                     LabeledContent("累计帧数", value: "\(logs.totalFrames)")
                     LabeledContent("已写入", value: formatBytes(logs.bytesWritten))
@@ -522,12 +555,67 @@ struct SettingsView: View {
                         SessionHistoryView()
                     }
                     Button("清空今天日志", role: .destructive) { logs.clearCurrentSession() }
+                    Text("关闭「写盘记录」后屏幕仍实时显示，但不再写 frames.csv / events.log；重新打开会接着今天的文件继续追加。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text("导出时会复制成 zhike-日期-时刻-frames.csv 这样的文件名，多次导出不会撞名。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(logs.folderPath)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.secondary)
+                }
+
+                Section("版本更新") {
+                    LabeledContent("当前版本", value: Bundle.main.appVersion)
+                    Button {
+                        Task { await updater.check() }
+                    } label: {
+                        if updater.state == .checking {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                Text("检查中…")
+                            }
+                        } else {
+                            Text("检查更新")
+                        }
+                    }
+                    .disabled(updater.state == .checking)
+
+                    switch updater.state {
+                    case .idle:
+                        Text("GitHub Releases 每次推送都会发布新构建，点上面按钮比对构建号。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .upToDate:
+                        Text("已是最新版本 ✓")
+                            .font(.caption)
+                            .foregroundStyle(.green)
+                    case .available(let tag, let build, let notes):
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("发现新版本 \(tag)（build \(build)）")
+                                .font(.callout.weight(.semibold))
+                                .foregroundStyle(.orange)
+                            if !notes.isEmpty {
+                                Text(notes)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(6)
+                            }
+                            Button("前往下载（Safari 打开 Releases 页）") {
+                                UpdateChecker.openDownloadPage()
+                            }
+                            Text("下载 ipa 后用 Sideloadly 覆盖安装即可，数据与日志不会丢。")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    case .failed(let reason):
+                        Text("检查失败：\(reason)")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    case .checking:
+                        EmptyView()
+                    }
                 }
 
                 Section("诊断信息") {

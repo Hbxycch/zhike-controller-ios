@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build (macOS)
@@ -69,6 +72,22 @@ jobs:
           path: ZhikeMonitor-unsigned.ipa
           retention-days: 7
           if-no-files-found: error
+
+      - name: Publish release (App 检查更新用)
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION:' project.yml | sed 's/.*"\(.*\)"/\1/')
+          BUILD=$(grep -m1 'CURRENT_PROJECT_VERSION:' project.yml | sed 's/.*"\(.*\)"/\1/')
+          TAG="v${VERSION}-b${BUILD}"
+          NOTES=$(git log -1 --pretty=%B | head -5)
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "ZhikeMonitor-unsigned.ipa" \
+            --title "$TAG" \
+            --notes "自动构建（build ${BUILD}）${NOTES}" || \
+          gh release upload "$TAG" "ZhikeMonitor-unsigned.ipa" --clobber
+          gh release view "$TAG" --json url,assets -q '.url, (.assets[].name)'
 
       - name: Upload build log on failure
         if: failure()

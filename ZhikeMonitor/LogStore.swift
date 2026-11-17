@@ -64,6 +64,7 @@ final class LogStore: ObservableObject {
     @Published private(set) var lastWriteAt: Date?
     @Published private(set) var resumedFromExisting = false
     @Published private(set) var sessions: [LogSession] = []
+    @Published private(set) var loggingEnabled = true
 
     private let ioQueue = DispatchQueue(label: "com.zhike.monitor.log", qos: .utility)
     private let ioKey = DispatchSpecificKey<Bool>()
@@ -78,13 +79,36 @@ final class LogStore: ObservableObject {
     private var lastPublish = Date.distantPast
     private var lastByteStamp = Date.distantPast
     private let maxEntries = 3000
+    static let loggingEnabledKey = "loggingEnabled"
 
     private init() {
+        UserDefaults.standard.register(defaults: [Self.loggingEnabledKey: true])
+        loggingEnabled = UserDefaults.standard.object(forKey: Self.loggingEnabledKey) as? Bool ?? true
         ioQueue.setSpecific(key: ioKey, value: true)
         observeAppLifecycle()
     }
 
     var isRunning: Bool { started }
+
+    /// 写盘总开关：关闭后 UI 事件流继续显示，但不再写 frames.csv / events.log。
+    /// 状态变更先记日志再改标志，保证 events.log 里有记录。
+    func setLoggingEnabled(_ on: Bool) {
+        guard on != loggingEnabled else { return }
+        if on {
+            loggingEnabled = true
+            UserDefaults.standard.set(true, forKey: Self.loggingEnabledKey)
+            // 若暂停期间 frames.csv 还是空的（表头没写过），补上
+            if let url = framesURL, fileSize(url) == 0 {
+                writeToFrames(ZhikeFrame.csvHeader)
+            }
+            log(.info, "===== 日志记录已开启 =====")
+        } else {
+            log(.info, "===== 日志记录已暂停（屏幕仍显示，写盘停止）=====")
+            loggingEnabled = false
+            UserDefaults.standard.set(false, forKey: Self.loggingEnabledKey)
+            flushNow()
+        }
+    }
 
     // MARK: - 会话
 
@@ -128,7 +152,7 @@ final class LogStore: ObservableObject {
         bytesWritten = fileSize(frames) + fileSize(events)
         byteTotal = bytesWritten
 
-        if existingFrames == 0 {
+        if existingFrames == 0 && loggingEnabled {
             writeToFrames(ZhikeFrame.csvHeader)
         }
 
@@ -237,6 +261,7 @@ final class LogStore: ObservableObject {
     }
 
     func logFrame(_ frame: ZhikeFrame) {
+        guard loggingEnabled else { return }
         frameSeq += 1
         let seq = frameSeq
         writeToFrames(frame.csvRow(seq: seq))
