@@ -101,10 +101,13 @@ struct WordGrid: View {
 struct LogsView: View {
     @EnvironmentObject private var logs: LogStore
     @State private var paused = false
+    @State private var showClearConfirm = false
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                sessionBar
+
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 2) {
@@ -135,20 +138,67 @@ struct LogsView: View {
                             Image(systemName: "square.and.arrow.up")
                         }
                     }
+                    NavigationLink {
+                        SessionHistoryView()
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                    }
                     Button(role: .destructive) {
-                        logs.clear()
+                        showClearConfirm = true
                     } label: {
                         Image(systemName: "trash")
                     }
                 }
             }
+            .confirmationDialog("清空今天的日志？", isPresented: $showClearConfirm, titleVisibility: .visible) {
+                Button("清空 \(logs.sessionStamp)", role: .destructive) { logs.clearCurrentSession() }
+                Button("取消", role: .cancel) { }
+            } message: {
+                Text("只清空今天的 frames.csv 与 events.log，历史日期不受影响。清空前建议先导出。")
+            }
         }
+    }
+
+    /// 顶部：今天的会话摘要 —— 明确告诉用户「数据在写、写到哪里、累计多少帧」
+    private var sessionBar: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(logs.lastWriteAt == nil ? Color.gray : Color.green)
+                    .frame(width: 7, height: 7)
+                Text("\(logs.sessionStamp)  ·  \(logs.totalFrames) 帧  ·  \(formatBytes(logs.bytesWritten))")
+                    .font(.caption2.monospacedDigit())
+                Spacer()
+                if logs.resumedFromExisting {
+                    Text("续写")
+                        .font(.system(size: 9, weight: .bold))
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(Color.blue.opacity(0.15))
+                        .foregroundStyle(.blue)
+                        .clipShape(Capsule())
+                }
+            }
+            Text(lastWriteText)
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    private var lastWriteText: String {
+        guard let last = logs.lastWriteAt else { return "等待数据…（每 5 秒落盘一次）" }
+        let seconds = Int(Date().timeIntervalSince(last))
+        return "最后写入 \(seconds) 秒前 · \(logs.folderPath)"
     }
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Text("\(logs.entries.count) 条 · \(formatBytes(logs.bytesWritten))")
+                Text("内存 \(logs.entries.count) 条")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -158,11 +208,10 @@ struct LogsView: View {
                 .toggleStyle(.switch)
                 .fixedSize()
             }
-            Text(logs.folderPath)
-                .font(.system(size: 9, design: .monospaced))
+            Text("日志按天归档，同一天内重启 App 会继续追加到同一个文件，不会新建空会话。")
+                .font(.system(size: 9))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -176,6 +225,73 @@ struct LogsView: View {
         case .tx: return .blue
         case .rx: return .gray
         case .info: return .primary
+        }
+    }
+}
+
+// MARK: - 历史会话
+
+struct SessionHistoryView: View {
+    @EnvironmentObject private var logs: LogStore
+    @State private var pendingDelete: LogSession?
+
+    var body: some View {
+        List {
+            if logs.sessions.isEmpty {
+                Text("还没有历史记录。连上控制器跑一段，日志会出现在这里。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            ForEach(logs.sessions) { session in
+                Section {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(session.title)
+                                    .font(.subheadline.weight(.semibold))
+                                if session.isToday {
+                                    Text("今天")
+                                        .font(.system(size: 9, weight: .bold))
+                                        .padding(.horizontal, 4)
+                                        .background(Color.green.opacity(0.18))
+                                        .foregroundStyle(.green)
+                                        .clipShape(Capsule())
+                                }
+                            }
+                            Text("\(session.framesLabel) · \(formatBytes(session.bytes)) · 更新 \(LogTime.clock.string(from: session.modified))")
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        ShareLink(items: [session.framesURL, session.eventsURL]) {
+                            Image(systemName: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                }
+            }
+            .onDelete { indexSet in
+                if let index = indexSet.first, logs.sessions.indices.contains(index) {
+                    pendingDelete = logs.sessions[index]
+                }
+            }
+        }
+        .navigationTitle("历史会话")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear { logs.refreshSessions() }
+        .confirmationDialog(
+            "删除 \(pendingDelete?.title ?? "") 的日志？",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                if let session = pendingDelete { logs.deleteSession(session) }
+                pendingDelete = nil
+            }
+            Button("取消", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("frames.csv 与 events.log 会一起删除，无法恢复。建议先导出。")
         }
     }
 }
@@ -368,14 +484,22 @@ struct SettingsView: View {
                 }
 
                 Section("日志") {
-                    LabeledContent("会话", value: logs.sessionStamp)
+                    LabeledContent("今日会话", value: logs.sessionStamp)
+                    LabeledContent("累计帧数", value: "\(logs.totalFrames)")
                     LabeledContent("已写入", value: formatBytes(logs.bytesWritten))
+                    LabeledContent("模式", value: logs.resumedFromExisting ? "续写今天已有文件" : "新建文件")
                     if !logs.files.isEmpty {
                         ShareLink(items: logs.files) {
-                            Text("导出日志文件")
+                            Text("导出今天日志")
                         }
                     }
-                    Button("清空日志", role: .destructive) { logs.clear() }
+                    NavigationLink("历史会话（按天归档）") {
+                        SessionHistoryView()
+                    }
+                    Button("清空今天日志", role: .destructive) { logs.clearCurrentSession() }
+                    Text("同一天内重启 App 会继续追加到同一个文件，历史日期不会被覆盖。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     Text(logs.folderPath)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundStyle(.secondary)

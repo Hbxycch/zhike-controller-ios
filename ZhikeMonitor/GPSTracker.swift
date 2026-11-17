@@ -31,18 +31,31 @@ final class GPSTracker: NSObject, ObservableObject {
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.activityType = .automotiveNavigation
         manager.pausesLocationUpdatesAutomatically = false
+        // 锁屏/退到后台继续采速，配合 Info.plist 的 UIBackgroundModes: location
+        manager.allowsBackgroundLocationUpdates = true
+        manager.showsBackgroundLocationIndicator = true
         status = manager.authorizationStatus
     }
 
     // MARK: 控制
 
     func start() {
-        if manager.authorizationStatus == .notDetermined {
-            manager.requestWhenInUseAuthorization()
-        }
+        requestUpgradeIfNeeded()
         manager.startUpdatingLocation()
         isRunning = true
-        LogStore.shared.log(.info, "GPS 采集启动（授权 \(Self.describe(status))）")
+        LogStore.shared.log(.info, "GPS 采集启动（授权 \(Self.describe(manager.authorizationStatus))）")
+    }
+
+    /// 先拿「使用期间」，再升级到「始终允许」，否则锁屏后定位会被系统掐断
+    private func requestUpgradeIfNeeded() {
+        switch manager.authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse:
+            manager.requestAlwaysAuthorization()
+        default:
+            break
+        }
     }
 
     func stop() {

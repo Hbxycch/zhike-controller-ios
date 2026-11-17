@@ -6,6 +6,8 @@ enum LogTime {
     static let iso = make("yyyy-MM-dd'T'HH:mm:ss.SSS")
     static let clock = make("HH:mm:ss.SSS")
     static let stamp = make("yyyyMMdd-HHmmss")
+    /// 会话目录名：按天归档，同一天的所有启动都续写同一份文件
+    static let day = make("yyyyMMdd")
 
     private static func make(_ format: String) -> DateFormatter {
         let formatter = DateFormatter()
