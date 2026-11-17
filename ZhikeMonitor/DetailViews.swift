@@ -252,6 +252,9 @@ struct SettingsView: View {
     @EnvironmentObject private var client: ZhikeBLEClient
     @EnvironmentObject private var logs: LogStore
 
+    @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
+    @AppStorage("motorPolePairs") private var polePairs: Int = 28
+
     var body: some View {
         NavigationStack {
             Form {
@@ -260,6 +263,17 @@ struct SettingsView: View {
                     Toggle("只显示 GEKOO / 智科设备", isOn: $client.filterZhikeOnly)
                     Button("重新扫描") { client.startScan() }
                     Button("断开连接", role: .destructive) { client.disconnect() }
+                }
+
+                Section("车速换算") {
+                    TextField("轮胎周长 (mm)", value: $circumferenceMM, format: .number)
+                        .keyboardType(.decimalPad)
+                    Stepper(value: $polePairs, in: 1...64) {
+                        Text("电机极对数 \(polePairs)")
+                    }
+                    Text("12 寸 130/70 周长 1529mm，130/60 为 1448mm。w6 实测为电转速，需除以极对数（12 寸常规 28、10 寸常规 23）才是轮速；该值以控制器「电机组-极对数」为准。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("演示") {

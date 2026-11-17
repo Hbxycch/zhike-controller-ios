@@ -26,6 +26,8 @@ struct ContentView: View {
 struct DashboardView: View {
     @EnvironmentObject private var client: ZhikeBLEClient
     @State private var showDevices = false
+    @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
+    @AppStorage("motorPolePairs") private var polePairs: Int = 28
 
     private var frame: ZhikeFrame? { client.lastFrame }
 
@@ -157,6 +159,12 @@ struct DashboardView: View {
             MetricCard(title: "电机转速",
                        value: value { frame in frame.rpm.map { String(format: "%.0f", $0) } },
                        unit: "rpm")
+            MetricCard(title: "理论车速",
+                       value: value { frame in
+                           frame.theoreticalSpeed(circumferenceMM: circumferenceMM, polePairs: polePairs)
+                               .map { String(format: "%.1f", $0) }
+                       },
+                       unit: "km/h")
             MetricCard(title: "相电流(估)",
                        value: value { frame in frame.phaseCurrentEstimate.map { String(format: "%.1f", $0) } },
                        unit: "A")

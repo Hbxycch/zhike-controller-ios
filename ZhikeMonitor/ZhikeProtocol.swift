@@ -222,6 +222,27 @@ struct ZhikeFrame: Identifiable {
     }
 }
 
+// MARK: - 车速换算（需人工标定：轮胎周长 + 电机极对数）
+//
+// w6 经实车数据验证为电机电转速（不是轮速）：
+//   按 12 寸 130/70 周长 1.529m 计，若当轮速用，5556rpm 会得出 510km/h，物理不成立。
+//   因此轮速 = w6 ÷ 极对数，车速 = 轮速 × 周长 × 0.06。
+// 参考：12 寸常规极对数 28（10 寸 23，瓦片 16），以控制器「电机组-极对数」实际值为准。
+
+enum SpeedCalibration {
+    static let circumferenceKey = "wheelCircumferenceMM"
+    static let polePairsKey = "motorPolePairs"
+}
+
+extension ZhikeFrame {
+    /// 理论车速 km/h = (w6 ÷ 极对数) × 周长(m) × 0.06
+    func theoreticalSpeed(circumferenceMM: Double, polePairs: Int) -> Double? {
+        guard let rpm = rpm, polePairs > 0, circumferenceMM > 0 else { return nil }
+        let wheelRPM = rpm / Double(polePairs)
+        return wheelRPM * (circumferenceMM / 1000.0) * 0.06
+    }
+}
+
 // MARK: - 拆包 / 重同步
 
 final class ZhikeFrameAssembler {
