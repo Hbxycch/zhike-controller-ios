@@ -180,9 +180,9 @@ final class LogStore: ObservableObject {
         frameSeq += 1
         let seq = frameSeq
         writeToFrames(frame.csvRow(seq: seq))
-        // 节流：UI 每 0.5 秒刷新一次帧计数，避免 5Hz 重绘整页
+        // 节流：UI 每秒刷新一次帧计数，避免 5Hz 重绘整页
         let now = Date()
-        if now.timeIntervalSince(lastPublish) >= 0.5 {
+        if now.timeIntervalSince(lastPublish) >= 1.0 {
             lastPublish = now
             DispatchQueue.main.async { [weak self] in self?.totalFrames = seq }
         }
