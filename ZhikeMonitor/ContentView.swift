@@ -27,7 +27,7 @@ struct DashboardView: View {
     @EnvironmentObject private var client: ZhikeBLEClient
     @State private var showDevices = false
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
-    @AppStorage("motorPolePairs") private var polePairs: Int = 28
+    @AppStorage("motorPolePairs") private var polePairs: Int = 16
 
     private var frame: ZhikeFrame? { client.lastFrame }
 
