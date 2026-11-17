@@ -1,9 +1,33 @@
 import SwiftUI
+import UIKit
 
 func formatBytes(_ bytes: Int) -> String {
     if bytes < 1024 { return "\(bytes) B" }
     if bytes < 1024 * 1024 { return String(format: "%.1f KB", Double(bytes) / 1024.0) }
     return String(format: "%.1f MB", Double(bytes) / 1024.0 / 1024.0)
+}
+
+/// 调起系统分享面板。文件已经复制成带时间戳的快照名，用户存到「文件」/微信后
+/// 靠文件名就能区分是哪天、哪次导出的。
+enum ShareSheet {
+    static func present(_ items: [URL]) {
+        guard !items.isEmpty else { return }
+        guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let root = scene.keyWindow?.rootViewController else { return }
+
+        var top = root
+        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let popover = controller.popoverPresentationController {
+            popover.sourceView = top.view
+            popover.sourceRect = CGRect(x: top.view.bounds.midX, y: top.view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
+        }
+        top.present(controller, animated: true)
+    }
 }
 
 // MARK: - 原始帧
@@ -133,10 +157,10 @@ struct LogsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if !logs.files.isEmpty {
-                        ShareLink(items: logs.files) {
-                            Image(systemName: "square.and.arrow.up")
-                        }
+                    Button {
+                        ShareSheet.present(logs.exportCurrentSession())
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
                     }
                     NavigationLink {
                         SessionHistoryView()
@@ -264,7 +288,9 @@ struct SessionHistoryView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
-                        ShareLink(items: [session.framesURL, session.eventsURL]) {
+                        Button {
+                            ShareSheet.present(logs.exportSession(session))
+                        } label: {
                             Image(systemName: "square.and.arrow.up")
                         }
                         .buttonStyle(.borderless)
@@ -489,15 +515,15 @@ struct SettingsView: View {
                     LabeledContent("已写入", value: formatBytes(logs.bytesWritten))
                     LabeledContent("模式", value: logs.resumedFromExisting ? "续写今天已有文件" : "新建文件")
                     if !logs.files.isEmpty {
-                        ShareLink(items: logs.files) {
-                            Text("导出今天日志")
+                        Button("导出今天日志") {
+                            ShareSheet.present(logs.exportCurrentSession())
                         }
                     }
                     NavigationLink("历史会话（按天归档）") {
                         SessionHistoryView()
                     }
                     Button("清空今天日志", role: .destructive) { logs.clearCurrentSession() }
-                    Text("同一天内重启 App 会继续追加到同一个文件，历史日期不会被覆盖。")
+                    Text("导出时会复制成 zhike-日期-时刻-frames.csv 这样的文件名，多次导出不会撞名。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Text(logs.folderPath)

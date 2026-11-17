@@ -168,6 +168,66 @@ final class LogStore: ObservableObject {
         }
     }
 
+    // MARK: - 导出
+
+    /// 导出今天的日志：先复制成带时间戳的快照，再交给系统分享。
+    /// 文件名形如 zhike-20261117-221218-frames.csv，两次导出不会撞名。
+    func exportCurrentSession() -> [URL] {
+        flushNow()
+        guard let frames = framesURL, let events = eventsURL else { return [] }
+        return makeSnapshot(frames: frames, events: events, day: sessionStamp)
+    }
+
+    /// 导出某一天的历史会话
+    func exportSession(_ session: LogSession) -> [URL] {
+        makeSnapshot(frames: session.framesURL, events: session.eventsURL, day: session.id)
+    }
+
+    /// 把日志复制到临时目录并重命名；同一秒内重复导出自动加序号
+    private func makeSnapshot(frames: URL, events: URL, day: String) -> [URL] {
+        let fileManager = FileManager.default
+        let base = fileManager.temporaryDirectory.appendingPathComponent("ZhikeExport", isDirectory: true)
+        try? fileManager.createDirectory(at: base, withIntermediateDirectories: true)
+
+        let stamp = LogTime.hms.string(from: Date())
+        var result: [URL] = []
+
+        for (source, kind) in [(frames, "frames.csv"), (events, "events.log")] {
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            var name = "zhike-\(day)-\(stamp)-\(kind)"
+            var destination = base.appendingPathComponent(name)
+            var index = 2
+            while fileManager.fileExists(atPath: destination.path) {
+                name = "zhike-\(day)-\(stamp)-\(index)-\(kind)"
+                destination = base.appendingPathComponent(name)
+                index += 1
+            }
+            do {
+                try fileManager.copyItem(at: source, to: destination)
+                result.append(destination)
+            } catch {
+                log(.warn, "导出失败 \(kind)：\(error.localizedDescription)")
+            }
+        }
+
+        cleanupExports(keeping: 6)
+        if !result.isEmpty {
+            log(.info, "导出快照 \(result.map { $0.lastPathComponent }.joined(separator: ", "))")
+        }
+        return result
+    }
+
+    /// 只保留最近几次快照，避免临时目录越堆越大
+    private func cleanupExports(keeping limit: Int) {
+        let fileManager = FileManager.default
+        let base = fileManager.temporaryDirectory.appendingPathComponent("ZhikeExport", isDirectory: true)
+        guard let names = try? fileManager.contentsOfDirectory(atPath: base.path) else { return }
+        let sorted = names.sorted(by: >)
+        for name in sorted.dropFirst(limit) {
+            try? fileManager.removeItem(at: base.appendingPathComponent(name))
+        }
+    }
+
     // MARK: - 写入
 
     func log(_ kind: LogKind, _ message: String) {
