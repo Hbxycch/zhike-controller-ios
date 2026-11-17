@@ -254,6 +254,9 @@ struct SettingsView: View {
 
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
     @AppStorage("motorPolePairs") private var polePairs: Int = 16
+    @AppStorage("speedFactorOverride") private var speedFactor: Double = 0
+    @State private var gpsSpeed: Double = 0
+    @State private var referenceW6: Double = 0
 
     var body: some View {
         NavigationStack {
@@ -280,7 +283,43 @@ struct SettingsView: View {
                     Stepper(value: $polePairs, in: 1...64) {
                         Text("电机极对数 \(polePairs)")
                     }
-                    Text("本车已确认：130/70-12 轮胎（理论周长 1529mm，受压滚动约 1499mm），极对数 16（官方「电机组」实读）。换算：车速 = w6 ÷ 16 × 周长 × 0.06。交叉验证：巡航峰值 w6=1398 → 8.0km/h，与官方 APP 表显一致。若与 GPS 比对恒定偏高约 2%，把周长改为 1499。")
+                    Text("本车已知：130/70-12 轮胎（理论周长 1529mm，受压滚动约 1499mm），官方「电机组」极对数 16。理论换算：车速 = w6 ÷ 16 × 周长 × 0.06，满把 w6≈5556 时约 32km/h。\n⚠️ 若实际满把 80~90km/h，说明理论除数不对（或 5556 只是中途转速），请用下方 GPS 标定一次性解决。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("GPS 车速标定") {
+                    HStack {
+                        TextField("实测车速 (km/h)", value: $gpsSpeed, format: .number)
+                            .keyboardType(.decimalPad)
+                        Divider()
+                        TextField("当时 w6", value: $referenceW6, format: .number)
+                            .keyboardType(.numberPad)
+                    }
+                    HStack {
+                        Button("计算并写入 K") {
+                            if gpsSpeed > 0, referenceW6 > 0 {
+                                speedFactor = gpsSpeed / referenceW6
+                            }
+                        }
+                        .disabled(gpsSpeed <= 0 || referenceW6 <= 0)
+                        Spacer()
+                        Button("清除标定", role: .destructive) { speedFactor = 0 }
+                            .disabled(speedFactor <= 0)
+                    }
+                    if speedFactor > 0 {
+                        Text(String(format: "当前 K = %.6f km/h 每 w6 单位  →  w6=5556 时显示 %.1f km/h",
+                                    speedFactor, speedFactor * 5556))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.blue)
+                    } else {
+                        Text(String(format: "未标定，按理论值 K = %.6f（P=%d, 周长 %.0fmm）",
+                                    (circumferenceMM / 1000.0) * 0.06 / Double(max(1, polePairs)),
+                                    polePairs, circumferenceMM))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("标定方法：保持控车稳定（如满把巡航），记下仪表/GPS 的车速，同时看本 App「电机转速」的 w6 读数，两个数填进上面。K = 车速 ÷ w6，与极对数、周长无关，最可靠。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -232,6 +232,8 @@ struct ZhikeFrame: Identifiable {
 enum SpeedCalibration {
     static let circumferenceKey = "wheelCircumferenceMM"
     static let polePairsKey = "motorPolePairs"
+    /// 直接标定的车速系数 K（km/h 每 w6 单位）。0 = 未标定，按 极对数×周长 理论计算。
+    static let factorKey = "speedFactorOverride"
 }
 
 extension ZhikeFrame {
@@ -240,6 +242,12 @@ extension ZhikeFrame {
         guard let rpm = rpm, polePairs > 0, circumferenceMM > 0 else { return nil }
         let wheelRPM = rpm / Double(polePairs)
         return wheelRPM * (circumferenceMM / 1000.0) * 0.06
+    }
+
+    /// 实际展示用车速：优先用实测标定系数 K，未标定时回退到理论换算
+    func speed(circumferenceMM: Double, polePairs: Int, factorOverride: Double) -> Double? {
+        if factorOverride > 0, let rpm = rpm { return rpm * factorOverride }
+        return theoreticalSpeed(circumferenceMM: circumferenceMM, polePairs: polePairs)
     }
 }
 
