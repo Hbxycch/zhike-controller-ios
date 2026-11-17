@@ -26,6 +26,10 @@
 	<string>需要蓝牙权限以连接智科（GEKOO）控制器，读取并显示实时运行数据。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>需要蓝牙权限以连接智科（GEKOO）控制器，读取并显示实时运行数据。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>记录 GPS 车速并与控制器转速同步写日志，用于标定车速换算系数。</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>记录 GPS 车速并与控制器转速同步写日志，用于标定车速换算系数。</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

@@ -251,6 +251,7 @@ struct DeviceListView: View {
 struct SettingsView: View {
     @EnvironmentObject private var client: ZhikeBLEClient
     @EnvironmentObject private var logs: LogStore
+    @EnvironmentObject private var gps: GPSTracker
 
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
     @AppStorage("motorPolePairs") private var polePairs: Int = 16
@@ -284,6 +285,36 @@ struct SettingsView: View {
                         Text("电机极对数 \(polePairs)")
                     }
                     Text("本车已知：130/70-12 轮胎（理论周长 1529mm，受压滚动约 1499mm），官方「电机组」极对数 16。理论换算：车速 = w6 ÷ 16 × 周长 × 0.06，满把 w6≈5556 时约 32km/h。\n⚠️ 若实际满把 80~90km/h，说明理论除数不对（或 5556 只是中途转速），请用下方 GPS 标定一次性解决。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("GPS（速度真值）") {
+                    Toggle("记录 GPS 车速到日志", isOn: Binding(
+                        get: { gps.isRunning },
+                        set: { newValue in
+                            if newValue { gps.requestPermission() } else { gps.stop() }
+                        }
+                    ))
+                    HStack {
+                        Text("授权")
+                        Spacer()
+                        Text(GPSTracker.describe(gps.status))
+                            .foregroundStyle(gps.status == .authorizedWhenInUse || gps.status == .authorizedAlways
+                                             ? Color.green : Color.orange)
+                    }
+                    .font(.subheadline)
+                    if let v = gps.speedKmh {
+                        HStack {
+                            Text("当前车速")
+                            Spacer()
+                            Text(String(format: "%.1f km/h（精度 ±%.0fm）", v, gps.accuracyM))
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.subheadline)
+                    }
+                    Text("开启后，每帧 frames.csv 会写入 gps_kmh / gps_acc_m / gps_age_s / gps_valid。把日志发回来即可用回归解出车速系数 K，以及相电流标定。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

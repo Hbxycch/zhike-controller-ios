@@ -25,6 +25,7 @@ struct ContentView: View {
 
 struct DashboardView: View {
     @EnvironmentObject private var client: ZhikeBLEClient
+    @EnvironmentObject private var gps: GPSTracker
     @State private var showDevices = false
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
     @AppStorage("motorPolePairs") private var polePairs: Int = 16
@@ -65,6 +66,9 @@ struct DashboardView: View {
             .sheet(isPresented: $showDevices) {
                 DeviceListView()
                     .presentationDetents([.medium, .large])
+            }
+            .onAppear {
+                if !gps.isRunning { gps.start() }
             }
         }
     }
@@ -168,6 +172,14 @@ struct DashboardView: View {
                                .map { String(format: "%.1f", $0) }
                        },
                        unit: "km/h")
+            MetricCard(title: "GPS 车速",
+                       value: gpsText,
+                       unit: "km/h",
+                       tint: .blue)
+            MetricCard(title: "实测 K",
+                       value: measuredKText,
+                       unit: "km/h÷rpm",
+                       tint: .blue)
             MetricCard(title: "相电流(估)",
                        value: value { frame in frame.phaseCurrentEstimate.map { String(format: "%.1f", $0) } },
                        unit: "A")
@@ -207,6 +219,21 @@ struct DashboardView: View {
     private func value(_ transform: (ZhikeFrame) -> String?) -> String {
         guard let frame = frame else { return "--" }
         return transform(frame) ?? "--"
+    }
+
+    // MARK: GPS
+
+    private var gpsText: String {
+        guard gps.isRunning else { return "未开启" }
+        guard let v = gps.speedKmh else { return "--" }
+        return String(format: "%.1f", v)
+    }
+
+    /// 实时粗算：GPS 车速 ÷ 当前 w6，直接读出现场标定系数 K
+    private var measuredKText: String {
+        guard let v = gps.speedKmh, v > 2.5,
+              let rpm = frame?.rpm, rpm > 200 else { return "--" }
+        return String(format: "%.5f", v / rpm)
     }
 
     // MARK: 故障

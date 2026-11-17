@@ -192,7 +192,7 @@ struct ZhikeFrame: Identifiable {
 
     static let csvHeader: String = {
         let words = (0..<ZhikeFrame.wordCount).map { "w\($0)" }.joined(separator: ",")
-        return "iso_time,seq,checksum_ok,hex,\(words),voltage_v,current_a,power_w,rpm,temp_c,gear,fault,throttle_raw,ctrl_w11,phase_u_raw,phase_v_raw,phase_a_est,throttle_v,twelve_v_w16,aux_temp_w17,regen\n"
+        return "iso_time,seq,checksum_ok,hex,\(words),voltage_v,current_a,power_w,rpm,temp_c,gear,fault,throttle_raw,ctrl_w11,phase_u_raw,phase_v_raw,phase_a_est,throttle_v,twelve_v_w16,aux_temp_w17,regen,gps_kmh,gps_acc_m,gps_age_s,gps_valid\n"
     }()
 
     func csvRow(seq: Int) -> String {
@@ -218,6 +218,19 @@ struct ZhikeFrame: Identifiable {
         fields.append(twelveVoltRail.map { String(format: "%.2f", $0) } ?? "")
         fields.append(auxTemp2.map { String(format: "%.2f", $0) } ?? "")
         fields.append(isRegenBraking ? "1" : "0")
+
+        // GPS 速度真值：按时间戳就近对齐（±2s），供事后回归求车速系数 K
+        if let gps = GPSTracker.shared.sample(near: timestamp) {
+            fields.append(gps.valid ? String(format: "%.2f", gps.kmh) : "")
+            fields.append(String(format: "%.1f", gps.acc))
+            fields.append(String(format: "%.2f", gps.age))
+            fields.append(gps.valid ? "1" : "0")
+        } else {
+            fields.append("")
+            fields.append("")
+            fields.append("")
+            fields.append("0")
+        }
         return fields.joined(separator: ",") + "\n"
     }
 }
