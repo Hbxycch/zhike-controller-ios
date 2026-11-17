@@ -138,3 +138,20 @@ dist/ZhikeMonitor-unsigned.ipa    本次 CI 产出的可安装包（未签名）
 免费 Apple ID 签的 App 有效期 7 天，到期重签一次即可（数据不会丢，日志在文件 App 里）。
 
 如果完全不想要签名这一套，替代方案是 **Android / 桌面 Chrome 的 Web Bluetooth 网页版**，同一套协议解析可以直接复用。
+
+## GPS 车速写入日志（用于自动标定）
+
+App 会同时开启定位，把 iPhone 的 GPS 车速写进每帧 `frames.csv`：
+
+| 列 | 含义 |
+| --- | --- |
+| `gps_kmh` | 该帧时刻的车速真值（km/h） |
+| `gps_acc_m` | 水平精度（米） |
+| `gps_age_s` | GPS 点与该帧的时间差（秒） |
+| `gps_valid` | 1=有效速度读数，0=无/无效 |
+
+监控面板的「实测 K」卡片直接显示 `GPS 车速 ÷ 当前 w6`，可现场核对；
+拿到日志后运行 `python zhike_protocol/analyze_gps_calib.py frames.csv 1529`，
+脚本会算出 K（km/h 每 w6 单位）、反解等效除数、并分速度段检查线性度。
+
+> 首次运行请允许定位权限（设置页可查看授权状态）。GPS 在隧道 / 高架下会丢点，属正常。
