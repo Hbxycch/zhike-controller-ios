@@ -39,14 +39,21 @@ extension Array where Element == UInt8 {
 //   w18 控制器温度：raw / 100 → ℃（官方 18.58℃ 显示格式精确吻合）
 //   w31 校验字
 //
-// 相电流标定（近似，误差 ~5%，待更多真值复核）：
-//   相电流(A) ≈ max(0, w7) × 0.0045
-//   依据：官方 4.35A ↔ w7≈968（0.2% 误差）、8A ↔ w7=1788/1863（<5%）；
-//   且与占空比物理关系吻合（母线 6A @ 78% 占空比 → 相电流 4.4A）。
+// 相电流标定（⚠️ 第 3 批数据发现工况依赖，系数不可靠）：
+//   相电流(A) ≈ w7 × 0.0045 —— 仅在官方截图同款"稳态巡航"工况下成立
+//   （官方 4.35A↔w7=968）。但第 3 批满油门加速段（母线 48A）w7 仅 1636，
+//   斜率从 ~250/字 掉到 ~21/字 → w7 标度随工况非线性，可能是 iq 经增益调度。
+//   w7 符号与转矩方向一致：驱动为正、回充为负。
 //   w14/w15 是相电流瞬时采样（异步，包络∝负载），w10 疑似 iq，w13 疑似 id/偏置。
-//   w20 / w21 状态位图（官方端口状态：高刹等；w21 bit1 恒 1 与"高刹=1"吻合）
+//   w11 控制量（第 3 批修正）：0~12571，与转速相关 0.981、与电流仅 0.713，
+//   疑似速度环输出/PWM 调制指令，不是占空比，不能按 4096 满量程换算。
+//   w20 / w21 状态位图（官方端口状态：高刹等）：
+//     w21 bit1 = 高刹（官方"高刹=1"）
+//     w21 bit8 = 回充/再生制动标志（第 3 批：松把滑行母线 -12A 时同步置位）
+//     w21 bit10 偶发，语义未定
 //   w4 静止时恒 0xAAAA，骑行时全幅跳动（疑似载波/PWM 计数器异步采样）
 //   w23 429~509 慢变，瞬间跳变（非温度，语义未知）
+//   转速实测量程：静止 0 ↔ 满油门 5556rpm（若按 1017rpm↔8km/h 折算约 43.7km/h）
 
 struct ZhikeFrame: Identifiable {
     static let header: [UInt8] = [0xAA, 0x13, 0x00]
@@ -143,19 +150,21 @@ struct ZhikeFrame: Identifiable {
         return Double(raw) * 19.0 / 4096.0
     }
 
-    /// 相电流估计值 ≈ max(0, w7) × 0.0045 A（近似标定，误差 ~5%）
+    /// 相电流估计值 ≈ w7 × 0.0045 A —— 仅稳态巡航工况近似成立，加速/回充段不可用
     var phaseCurrentEstimate: Double? {
         let raw = Double(Int16(bitPattern: words[7]))
         guard raw > 0 else { return nil }
         return raw * 0.0045
     }
 
-    /// PWM 占空比 w11（0~4096 → %）
-    var dutyCycle: Double? {
-        let raw = words[11]
-        guard raw > 0, raw <= 4300 else { return nil }
-        return Double(raw) / 4096.0 * 100.0
-    }
+    /// w7 原始值：转矩电流量纲（驱动为正、回充为负），标度随工况非线性
+    var torqueCurrentRaw: Int16 { Int16(bitPattern: words[7]) }
+
+    /// 控制量 w11 原始值（疑似速度环输出/PWM 调制指令，实测 0~12571，与转速相关 0.98）
+    var ctrlWord: UInt16 { words[11] }
+
+    /// 回充/再生制动标志：w21 bit8（松把滑行母线电流为负时同步置位）
+    var isRegenBraking: Bool { (words[21] >> 8) & 1 == 1 }
 
     /// 相电流瞬时采样 U（int16 原始值，异步采样）
     var phaseSampleU: Int16 { Int16(bitPattern: words[14]) }
@@ -183,7 +192,7 @@ struct ZhikeFrame: Identifiable {
 
     static let csvHeader: String = {
         let words = (0..<ZhikeFrame.wordCount).map { "w\($0)" }.joined(separator: ",")
-        return "iso_time,seq,checksum_ok,hex,\(words),voltage_v,current_a,power_w,rpm,temp_c,gear,fault,throttle_raw,duty_pct,phase_u_raw,phase_v_raw,phase_a_est,throttle_v,twelve_v_w16,aux_temp_w17\n"
+        return "iso_time,seq,checksum_ok,hex,\(words),voltage_v,current_a,power_w,rpm,temp_c,gear,fault,throttle_raw,ctrl_w11,phase_u_raw,phase_v_raw,phase_a_est,throttle_v,twelve_v_w16,aux_temp_w17,regen\n"
     }()
 
     func csvRow(seq: Int) -> String {
@@ -201,13 +210,14 @@ struct ZhikeFrame: Identifiable {
         fields.append(gear.map { String($0) } ?? "")
         fields.append(String(format: "0x%04X", Int(faultCode)))
         fields.append(String(throttleRaw))
-        fields.append(dutyCycle.map { String(format: "%.1f", $0) } ?? "")
+        fields.append(String(ctrlWord))
         fields.append(String(phaseSampleU))
         fields.append(String(phaseSampleV))
         fields.append(phaseCurrentEstimate.map { String(format: "%.2f", $0) } ?? "")
         fields.append(String(format: "%.3f", throttleVoltage))
         fields.append(twelveVoltRail.map { String(format: "%.2f", $0) } ?? "")
         fields.append(auxTemp2.map { String(format: "%.2f", $0) } ?? "")
+        fields.append(isRegenBraking ? "1" : "0")
         return fields.joined(separator: ",") + "\n"
     }
 }
@@ -310,17 +320,18 @@ enum ZhikeDemo {
         words[6] = UInt16(bitPattern: Int16(clamping: Int(rpm.rounded())))
         words[8] = UInt16(max(0, min(65535, Int((voltage * 10.0 * 4096.0 / 150.0).rounded()))))
         words[9] = UInt16(bitPattern: Int16(clamping: Int(current.rounded())))
-        words[11] = UInt16(max(0, min(4096, Int(abs(current) / 50.0 * 4096.0))))
-        let phaseA = abs(current) * 1.3
-        words[7] = UInt16(bitPattern: Int16(clamping: Int((phaseA / 0.0045).rounded())))
+        words[11] = UInt16(clamping: Int(rpm * 2.2))
+        let torqueRaw = Int(current < 0 ? current * 55.0 : current * 24.0 + (current > 0 ? 400 : 0))
+        words[7] = UInt16(bitPattern: Int16(clamping: torqueRaw))
         words[10] = UInt16(bitPattern: Int16(clamping: Int(abs(current) * 96.0)))
+        let phaseA = abs(current) * 1.3
         words[14] = UInt16(bitPattern: Int16(clamping: Int((phaseA / 0.0045) * Double.random(in: 0.2...1.0))))
         words[15] = words[14]
         words[16] = 3104
         words[17] = 2101
         words[18] = UInt16(max(0, min(20000, Int((temperature * 100).rounded()))))
         words[20] = current != 0 ? 3 : 0
-        words[21] = 58
+        words[21] = current < 0 ? 258 : (current != 0 ? 2 : 2)
         words[22] = fault
 
         var sum = 0

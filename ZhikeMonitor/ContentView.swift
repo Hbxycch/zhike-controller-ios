@@ -169,9 +169,9 @@ struct DashboardView: View {
             MetricCard(title: "12V 电源",
                        value: value { frame in frame.twelveVoltRail.map { String(format: "%.2f", $0) } },
                        unit: "V")
-            MetricCard(title: "PWM 占空比 w11",
-                       value: value { frame in frame.dutyCycle.map { String(format: "%.0f", $0) } },
-                       unit: "%")
+            MetricCard(title: "控制量 w11",
+                       value: value { frame in String(frame.ctrlWord) },
+                       unit: "raw")
             MetricCard(title: "环境温度 w17",
                        value: value { frame in frame.auxTemp2.map { String(format: "%.1f", $0) } },
                        unit: "℃")
@@ -182,7 +182,10 @@ struct DashboardView: View {
                        value: value { frame in String(frame.loadAux2) },
                        unit: "raw")
             MetricCard(title: "状态 w20/w21",
-                       value: value { frame in String(format: "%02X/%04X", frame.words[20], frame.words[21]) },
+                       value: value { frame in
+                           let base = String(format: "%02X/%04X", frame.words[20], frame.words[21])
+                           return frame.isRegenBraking ? base + " 回充" : base
+                       },
                        unit: "")
             MetricCard(title: "故障码",
                        value: value { frame in String(format: "0x%04X", Int(frame.faultCode)) },
