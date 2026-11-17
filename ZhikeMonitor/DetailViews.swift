@@ -268,10 +268,19 @@ struct SettingsView: View {
                 Section("车速换算") {
                     TextField("轮胎周长 (mm)", value: $circumferenceMM, format: .number)
                         .keyboardType(.decimalPad)
+                    HStack {
+                        Text("常用规格")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("130/70-12 · 1499") { circumferenceMM = 1499 }
+                        Button("130/70-12 · 1529") { circumferenceMM = 1529 }
+                    }
+                    .buttonStyle(.bordered)
                     Stepper(value: $polePairs, in: 1...64) {
                         Text("电机极对数 \(polePairs)")
                     }
-                    Text("12 寸 130/70 周长 1529mm，130/60 为 1448mm。w6 实测为电转速，需除以极对数（12 寸常规 28、10 寸常规 23）才是轮速；该值以控制器「电机组-极对数」为准。")
+                    Text("本车已确认 130/70-12：理论周长 1529mm（外径 486.8mm）；轮胎受压后实际滚动周长约小 2%，即 1499mm 左右。若与 GPS 比对发现恒定偏低 2%，把周长改成 1499。\nw6 实测为电转速，需除以极对数（12 寸常规 28、10 寸常规 23）才是轮速；极对数以控制器「电机组」里的值为准。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
