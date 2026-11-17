@@ -241,30 +241,36 @@ struct ZhikeFrame: Identifiable {
 
 // MARK: - 车速换算（需人工标定：轮胎周长 + 电机极对数）
 //
-// w6 经实车数据验证为电机电转速（不是轮速）：
-//   按 12 寸 130/70 周长 1.529m 计，若当轮速用，5556rpm 会得出 510km/h，物理不成立。
-//   因此轮速 = w6 ÷ 极对数，车速 = 轮速 × 周长 × 0.06。
-// 参考：12 寸常规极对数 28（10 寸 23，瓦片 16），以控制器「电机组-极对数」实际值为准。
+// w6 实车验证为「电机机械转速」，与车速的关系由 2026-11-17 第四批日志（904 帧，
+// GPS 有效 690 帧，最高 58km/h）回归得出：
+//   稳态样本 K = 0.01519 km/h per w6（R²=0.96），全驱动样本 0.0147~0.0159。
+//   按 130/70-12 周长 1.529m 反推，等效传动比 ≈ 5.8（电机转 5.8 圈 = 车轮 1 圈），
+//   即这是齿轮减速轮毂，不是直驱 —— 之前「w6 ÷ 极对数」的换算是错的（16 极对数
+//   是电角度参数，不参与机械减速），会把车速低估约 2.7 倍。
+//   交叉验证：w6=5556 × 0.0155 ≈ 86km/h，与车主实测满把 80~90km/h 吻合。
 
 enum SpeedCalibration {
     static let circumferenceKey = "wheelCircumferenceMM"
-    static let polePairsKey = "motorPolePairs"
-    /// 直接标定的车速系数 K（km/h 每 w6 单位）。0 = 未标定，按 极对数×周长 理论计算。
+    static let ratioKey = "gearRatio"
+    /// 直接标定的车速系数 K（km/h 每 w6 单位）。0 = 未标定，按 传动比 × 周长 理论计算。
     static let factorKey = "speedFactorOverride"
+    /// 第四批日志回归值，作为出厂默认，先用再校准
+    static let defaultFactor = 0.0155
+    static let defaultGearRatio = 5.8
 }
 
 extension ZhikeFrame {
-    /// 理论车速 km/h = (w6 ÷ 极对数) × 周长(m) × 0.06
-    func theoreticalSpeed(circumferenceMM: Double, polePairs: Int) -> Double? {
-        guard let rpm = rpm, polePairs > 0, circumferenceMM > 0 else { return nil }
-        let wheelRPM = rpm / Double(polePairs)
+    /// 理论车速 km/h = (w6 ÷ 传动比) × 周长(m) × 0.06
+    func theoreticalSpeed(circumferenceMM: Double, gearRatio: Double) -> Double? {
+        guard let rpm = rpm, gearRatio > 0, circumferenceMM > 0 else { return nil }
+        let wheelRPM = rpm / gearRatio
         return wheelRPM * (circumferenceMM / 1000.0) * 0.06
     }
 
-    /// 实际展示用车速：优先用实测标定系数 K，未标定时回退到理论换算
-    func speed(circumferenceMM: Double, polePairs: Int, factorOverride: Double) -> Double? {
+    /// 实际展示用车速：优先用实测标定系数 K，未标定时回退到 传动比 × 周长
+    func speed(circumferenceMM: Double, gearRatio: Double, factorOverride: Double) -> Double? {
         if factorOverride > 0, let rpm = rpm { return rpm * factorOverride }
-        return theoreticalSpeed(circumferenceMM: circumferenceMM, polePairs: polePairs)
+        return theoreticalSpeed(circumferenceMM: circumferenceMM, gearRatio: gearRatio)
     }
 }
 

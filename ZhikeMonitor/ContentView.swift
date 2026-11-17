@@ -28,8 +28,8 @@ struct DashboardView: View {
     @EnvironmentObject private var gps: GPSTracker
     @State private var showDevices = false
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
-    @AppStorage("motorPolePairs") private var polePairs: Int = 16
-    @AppStorage("speedFactorOverride") private var speedFactor: Double = 0
+    @AppStorage("gearRatio") private var gearRatio: Double = 5.8
+    @AppStorage("speedFactorOverride") private var speedFactor: Double = 0.0155
 
     private var frame: ZhikeFrame? { client.lastFrame }
 
@@ -164,10 +164,10 @@ struct DashboardView: View {
             MetricCard(title: "电机转速",
                        value: value { frame in frame.rpm.map { String(format: "%.0f", $0) } },
                        unit: "rpm")
-            MetricCard(title: speedFactor > 0 ? "车速(已标定)" : "理论车速",
+            MetricCard(title: speedFactor > 0 ? "车速(K)" : "车速(理论)",
                        value: value { frame in
                            frame.speed(circumferenceMM: circumferenceMM,
-                                       polePairs: polePairs,
+                                       gearRatio: gearRatio,
                                        factorOverride: speedFactor)
                                .map { String(format: "%.1f", $0) }
                        },

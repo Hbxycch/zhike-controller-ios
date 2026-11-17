@@ -396,8 +396,8 @@ struct SettingsView: View {
     @EnvironmentObject private var gps: GPSTracker
 
     @AppStorage("wheelCircumferenceMM") private var circumferenceMM: Double = 1529
-    @AppStorage("motorPolePairs") private var polePairs: Int = 16
-    @AppStorage("speedFactorOverride") private var speedFactor: Double = 0
+    @AppStorage("gearRatio") private var gearRatio: Double = 5.8
+    @AppStorage("speedFactorOverride") private var speedFactor: Double = 0.0155
     @State private var gpsSpeed: Double = 0
     @State private var referenceW6: Double = 0
 
@@ -423,10 +423,9 @@ struct SettingsView: View {
                         Button("130/70-12 · 1529") { circumferenceMM = 1529 }
                     }
                     .buttonStyle(.bordered)
-                    Stepper(value: $polePairs, in: 1...64) {
-                        Text("电机极对数 \(polePairs)")
-                    }
-                    Text("本车已知：130/70-12 轮胎（理论周长 1529mm，受压滚动约 1499mm），官方「电机组」极对数 16。理论换算：车速 = w6 ÷ 16 × 周长 × 0.06，满把 w6≈5556 时约 32km/h。\n⚠️ 若实际满把 80~90km/h，说明理论除数不对（或 5556 只是中途转速），请用下方 GPS 标定一次性解决。")
+                    TextField("传动比（电机转 ÷ 车轮转）", value: $gearRatio, format: .number)
+                        .keyboardType(.decimalPad)
+                    Text("本车：130/70-12 轮胎（周长 1529mm，受压滚动约 1499mm），齿轮减速轮毂。\n2026-11-17 实车回归（904 帧 / GPS 690 帧）：等效传动比 ≈ 5.8，K = 0.0155 km/h 每 w6 单位，w6=5556 时约 86km/h，与满把 80~90km/h 一致。\n注意：控制器「极对数 16」是电角度参数，不参与机械减速，不能拿来算车速 —— 早前按 w6÷16 换算会把车速低估 2.7 倍。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -486,13 +485,13 @@ struct SettingsView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.blue)
                     } else {
-                        Text(String(format: "未标定，按理论值 K = %.6f（P=%d, 周长 %.0fmm）",
-                                    (circumferenceMM / 1000.0) * 0.06 / Double(max(1, polePairs)),
-                                    polePairs, circumferenceMM))
+                        Text(String(format: "未标定，按理论值 K = %.6f（传动比 %.2f, 周长 %.0fmm）",
+                                    (circumferenceMM / 1000.0) * 0.06 / max(0.1, gearRatio),
+                                    gearRatio, circumferenceMM))
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
-                    Text("标定方法：保持控车稳定（如满把巡航），记下仪表/GPS 的车速，同时看本 App「电机转速」的 w6 读数，两个数填进上面。K = 车速 ÷ w6，与极对数、周长无关，最可靠。")
+                    Text("标定方法：保持控车稳定（如满把巡航），记下仪表/GPS 的车速，同时看本 App「电机转速」的 w6 读数，两个数填进上面。K = 车速 ÷ w6，与传动比、周长无关，最可靠。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
